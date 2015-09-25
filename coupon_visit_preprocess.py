@@ -23,13 +23,14 @@ __fail__ = 0
 # Setup logging
 logging.config.fileConfig('logging.conf')
 
-logger = logging.getLogger("")
+logger = logging.getLogger("debug")
 
 
 class PreProcess:
     def __init__(self):
         #  Initialize variables
         self.cwd = os.getcwd()
+        self.data_dir = "/home/harsha/kaggle/ponpare/data"
         self.train_data_dir = "/home/harsha/kaggle/ponpare/data/train"
         self.test_data_dir = "/home/harsha/kaggle/ponpare/data/train"
         pass
@@ -93,10 +94,69 @@ class PreProcess:
 
         os.chdir(self.cwd)
 
+    # More details on coupon purchase info by user. Will feed into attributes
+    def purchase_stats(self):
+
+        os.chdir(self.data_dir)
+
+        f = open('user_list.csv', 'r')
+
+        numlines = sf.file_len(f.name)
+        linenum = 0
+
+        logger.debug("user_list.csv %d lines", numlines)
+
+        # Create 2D array that can store number of purchases per userid
+        array_userid_purchase = np.zeros((numlines-1, 2), dtype=object)
+
+        for line in f:
+            if linenum:  # Ignore first line as it's the title
+                array_userid_purchase[linenum-1][0] = line.split(',')[5]
+            else:
+                print line.split(',')[5]
+            linenum += 1
+
+        logger.debug("array_userid_purchase size is %s\n", array_userid_purchase.shape)
+
+        f.close()
+
+        os.chdir(self.train_data_dir)
+
+        # Get coupon purchase info from coupon detail file. Calculate # coupons purchased vs. user
+        f = open('coupon_detail_train.csv', 'r')
+
+        datavalid = 0
+
+        for line in f:
+            if datavalid:  # Ignore first line as it's the title
+
+                # Find index for each userid in the array populated from user_list.csv
+                index_row, index_col = np.where(array_userid_purchase == line.split(',')[4])
+
+                # Sum of total coupons purchased for each user
+                array_userid_purchase[index_row, index_col + 1] += int(line.split(',')[0])
+
+            datavalid = 1
+
+        f.close()
+
+        np.save('purchase_total_by_user', array_userid_purchase)
+
+        np.savetxt('purchase_total_by_user.log', array_userid_purchase, fmt='%s')
+
+        os.chdir(self.cwd)
+
         return __pass__
+
+    def temp(self):
+        os.chdir(self.train_data_dir)
+
+        sf.save_npy_array_to_csv("purchase_total_by_user.npy", "purchase_total_by_user.csv")
+
+        os.chdir(self.cwd)
 
 if __name__ == "__main__":
 
     pp = PreProcess()
 
-    pp.compare_coupons_visit_list()
+    # pp.purchase_stats()
