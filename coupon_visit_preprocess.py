@@ -1,11 +1,8 @@
 #########################################################################################################
 #  Description: Coupon visit train csv file has information on user visits. Need to pre process
 #  to obtain data that's useful for training. Key information to be extracted are
-#  1. Number of unique sessions per user per coupon
-#  2. Number of views per session
-#  3. Purchases / view / coupon / user
-#  4. Referrer info - Number of referrers / site visit / user, % of referrals by referrer / user.
-#     Purchase info by referrer - % of purchases / referrer / user.
+#  1. Compare coupon information between different train files
+#  2. Purchases statistics
 #
 #########################################################################################################
 # import
@@ -16,9 +13,15 @@ import logging.config
 import support_functions as sf
 
 #########################################################################################################
+# Global variables
 __author__ = "DataCentric1"
 __pass__ = 1
 __fail__ = 0
+
+__numusers__ = 22873
+__numtraincoupons__ = 19413
+__numtestcoupons__ = 310
+
 #########################################################################################################
 # Setup logging
 logging.config.fileConfig('logging.conf')
@@ -95,6 +98,7 @@ class PreProcess:
         os.chdir(self.cwd)
 
     # More details on coupon purchase info by user. Will feed into attributes
+    # TODO - take a look again, seems like a complex implementation. Maybe replace with total_purchases_by_cid
     def purchase_stats(self):
 
         os.chdir(self.data_dir)
@@ -148,10 +152,134 @@ class PreProcess:
 
         return __pass__
 
-    def temp(self):
+    # Total purchases by couponid (some coupons might have been purchased multiple times),
+    # That's difference between this value and one computed in function purchase_view_attributes
+    def purchase_stats_by_coupon(self):
+
+        os.chdir(self.data_dir + "/npy_arrays")
+
+        couponid_hash = np.load("couponid_hash_train.npy")
+
         os.chdir(self.train_data_dir)
 
-        sf.save_npy_array_to_csv("purchase_total_by_user.npy", "purchase_total_by_user.csv")
+        # Get coupon purchase info from coupon detail file. Calculate # coupons purchased vs. user
+        fr1 = open('coupon_detail_train.csv', 'r')
+
+        linenum = 0
+        purchasetotalbycoupon = np.zeros(__numtraincoupons__, int)
+
+        for line in fr1:
+            if linenum:  # Ignore first line as it's the title
+
+                arrayindexcoupon = np.where(couponid_hash == line.split(',')[5])
+
+                # Sum of total coupons purchased for each user
+                purchasetotalbycoupon[arrayindexcoupon] += int(line.split(',')[0])
+
+            linenum += 1
+
+        fr1.close()
+
+        logger.debug(purchasetotalbycoupon)
+        logger.debug(purchasetotalbycoupon.shape)
+
+        np.save('purchase_total_by_coupon', purchasetotalbycoupon)
+
+        np.savetxt('purchase_total_by_coupon.log', purchasetotalbycoupon, fmt='%s')
+
+        os.chdir(self.cwd)
+
+        return __pass__
+
+    # Total views / purchases by users and coupons (from unique train data). Will be new features into the model
+    def purchase_view_attributes(self):
+
+        os.chdir(self.train_data_dir)
+
+        # Total coupons viewed by user (number of coupons viewed)
+        # and coupon (number of times each coupon was viewed)
+        viewedbyuserid = np.zeros(__numusers__, int)
+        viewedbycouponid = np.zeros(__numtraincoupons__, int)
+
+        # Total coupons purchased by user (number of coupons purchased)
+        # and coupon (number of times each coupon was purchased)
+        purchasedbyuserid = np.zeros(__numusers__, int)
+        purchasedbycouponid = np.zeros(__numtraincoupons__, int)
+
+        fr1_fname = 'mmlu.data'
+
+        fr1 = open(fr1_fname, 'r')
+
+        linenum = 0
+        for line in fr1:
+            if int(line.split(',')[2]) == 1:  # Coupon was purchased
+                if int(line.split(',')[0]) == 0:  # UID of 0 was a mistake, it should have been 1
+                    purchasedbyuserid[0] += 1
+                else:
+                    purchasedbyuserid[int(line.split(',')[0]) - 1] += 1
+
+                if int(line.split(',')[1]) == 0:  # CID of 0 was a mistake, it should have been 1
+                    purchasedbycouponid[0] += 1
+                else:
+                    purchasedbycouponid[int(line.split(',')[1]) - 1] += 1
+
+            elif int(line.split(',')[2]) == 0:  # Coupon was viewed
+                if int(line.split(',')[0]) == 0:  # UID of 0 was a mistake, it should have been 1
+                    viewedbyuserid[0] += 1
+                else:
+                    viewedbyuserid[int(line.split(',')[0]) - 1] += 1
+
+                if int(line.split(',')[1]) == 0:  # CID of 0 was a mistake, it should have been 1
+                    viewedbycouponid[0] += 1
+                else:
+                    viewedbycouponid[int(line.split(',')[1]) - 1] += 1
+
+            else:
+                raise ValueError("Invalid purchase flag info. Should only be 0 or 1")
+        linenum += 1
+
+        fr1.close()
+
+        # np.save("total_coupons_purchased_by_user", purchasedbyuserid)
+        # np.save("total_purchases_by_coupon", purchasedbycouponid)
+        # np.save("total_coupons_viewed_by_coupon", viewedbyuserid)
+        # np.save("total_views_by_coupon", viewedbycouponid)
+
+        os.chdir(self.cwd)
+
+    # Wrapper function to call plotting functions
+    def plotdata(self):
+        os.chdir(self.data_dir)
+
+        fname = "user_list_mod.csv"
+
+        nummembershipdays = np.zeros(sf.file_len(fname), int)
+        linenum = 0
+
+        # Get number of membership days data from input file
+        f = open(fname, 'r')
+
+        for line in f:
+            nummembershipdays[linenum] = int(line.split(',')[4])
+            linenum += 1
+
+        f.close()
+
+        # Still needs to be debugged
+        # vis.cumprobplot(nummembershipdays)
+
+    def save_np_arrays_to_txtcsv(self):
+        os.chdir(self.data_dir + "/npy_arrays")
+
+        sf.save_npy_array_to_txt("purchase_total_by_coupon.npy", "purchase_total_by_coupon.log")
+
+        sf.save_npy_array_to_txt("total_purchase_instances_by_coupon.npy", "total_purchase_instances_by_coupon.log")
+
+        sf.save_npy_array_to_txt("total_purchase_instances_by_user.npy", "total_purchase_instances_by_user.log")
+
+        sf.save_npy_array_to_txt("total_views_by_coupon.npy", "total_views_by_coupon.log")
+
+        sf.save_npy_array_to_txt("total_views_by_user.npy", "total_views_by_user.log")
 
         os.chdir(self.cwd)
 
@@ -160,3 +288,11 @@ if __name__ == "__main__":
     pp = PreProcess()
 
     # pp.purchase_stats()
+
+    # pp.purchase_stats_by_coupon()
+
+    # pp.plotdata()
+
+    # pp.purchase_view_attributes()
+
+    pp.save_np_arrays_to_txtcsv()
