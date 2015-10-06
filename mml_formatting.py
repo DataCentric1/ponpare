@@ -179,6 +179,39 @@ class MmlDataFormat:
 
         os.chdir(self.cwd)
 
+    # Create train userid / couponid data. Fill in combinations from valid_coupon_visited_unique file
+    # to 1s (mmlu.data is translation of that file into uid / cid)
+    def train_viewed_data_uid_cid(self):
+
+        os.chdir(self.train_data_dir)
+
+        numusers = 22873
+        numtraincoupons = 19413
+
+        viewed = np.zeros((numusers + 1, numtraincoupons + 1), int)
+
+        print viewed.shape
+        print viewed
+
+        fr1 = open('mmlu.data', 'r')
+
+        for line in fr1:
+            viewed[int(line.split(',')[0])][int(line.split(',')[1])] = 1
+        fr1.close()
+
+        fw = open('mmlu_train_viewed.data', 'w')
+
+        for i in range(0, numusers):
+            for j in range(0, numtraincoupons):
+                if viewed[i][j]:
+                    fw.write("%d" % i + "," + "%d" % j + ",1\n")
+                else:
+                    fw.write("%d" % i + "," + "%d" % j + ",0\n")
+
+        fw.close()
+
+        os.chdir(self.cwd)
+
     # Create test userid / couponid data.
     def test_data_uid_cid(self):
 
@@ -193,6 +226,74 @@ class MmlDataFormat:
                     fw.write("%d" % (z*2000 + i) + "," + "%d" % (z * 30 + j) + "\n")
 
         fw.close()
+
+    # Create test userid / couponid data.
+    def random_split_test_file(self):
+
+        os.chdir(self.test_data_dir)
+
+        fw0_fname = 'mmlu_t0.base'
+        fw1_fname = 'mmlu_t1.base'
+        fw2_fname = 'mmlu_t2.base'
+        fw3_fname = 'mmlu_t3.base'
+        fw4_fname = 'mmlu_t4.base'
+        fw5_fname = 'mmlu_t5.base'
+        fw6_fname = 'mmlu_t6.base'
+        fw7_fname = 'mmlu_t7.base'
+        fw8_fname = 'mmlu_t8.base'
+        fw9_fname = 'mmlu_t9.base'
+
+        fr1 = open('mmlu_test.data', 'r')
+
+        fw0 = open(fw0_fname, 'w')
+        fw1 = open(fw1_fname, 'w')
+        fw2 = open(fw2_fname, 'w')
+        fw3 = open(fw3_fname, 'w')
+        fw4 = open(fw4_fname, 'w')
+        fw5 = open(fw5_fname, 'w')
+        fw6 = open(fw6_fname, 'w')
+        fw7 = open(fw7_fname, 'w')
+        fw8 = open(fw8_fname, 'w')
+        fw9 = open(fw9_fname, 'w')
+
+        linenum = 0
+        for line in fr1:
+            if not linenum % 7:  # choose prime numbers
+                fw0.write(line)
+            elif not linenum % 11:
+                fw1.write(line)
+            elif not linenum % 13:
+                fw2.write(line)
+            elif not linenum % 19:
+                fw3.write(line)
+            elif not linenum % 23:
+                fw4.write(line)
+            elif not linenum % 9:  # Switch to more frequent #s to even out file sizes
+                fw5.write(line)
+            elif not linenum % 10:
+                fw6.write(line)
+            elif not linenum % 17:
+                fw7.write(line)
+            elif not linenum % 21:
+                fw8.write(line)
+            else:
+                fw9.write(line)
+            linenum += 1
+
+        fr1.close()
+
+        fw0.close()
+        fw1.close()
+        fw2.close()
+        fw3.close()
+        fw4.close()
+        fw5.close()
+        fw6.close()
+        fw7.close()
+        fw8.close()
+        fw9.close()
+
+        os.chdir(self.cwd)
 
     # Converts userid and coupon_id hash into user and coupon numbers
     # TODO - Found user#1 and coupon#0,1 were not there in output. Check what happened, very odd...
@@ -248,13 +349,20 @@ class MmlDataFormat:
 
             linenum += 1
 
+        fr1.close()
+
+        print("#######")
         logger.debug(userid)
         logger.debug(couponid)
 
         logger.debug(userid_hash)
         logger.debug(couponid_hash)
 
-        fr1.close()
+        # Uncomment to save the arrays
+        # np.save("userid", userid)
+        # np.save("userid_hash", userid_hash)
+        # np.save("couponid_train", couponid)
+        # np.save("couponid_hash_train", couponid_hash)
 
         if phase == "common":
             logger.debug("Phase common, only has userid info")
@@ -451,12 +559,32 @@ class MmlDataFormat:
     # Loop through all user IDs
     def user_attributes(self):
 
+        # Load npy arrays
+        os.chdir(self.data_dir + "/npy_arrays")
+
+        prefnames = np.load("user_prefecture_names.npy")
+
+        total_views_by_user = np.load("total_views_by_user.npy")
+
+        total_purchase_instances_by_user = np.load("total_purchase_instances_by_user.npy")
+
+        temp_purchase_total_by_user = np.load("purchase_total_by_user.npy")
+
+        purchase_total_by_user = temp_purchase_total_by_user[:, 1]
+
+        logger.debug(total_views_by_user.shape)
+        logger.debug(total_views_by_user)
+
+        logger.debug(total_purchase_instances_by_user.shape)
+        logger.debug(total_purchase_instances_by_user)
+
+        logger.debug(purchase_total_by_user.shape)
+        logger.debug(purchase_total_by_user)
+
         os.chdir(self.data_dir)
 
         fr1_fname = 'user_list_mod_uid.data'
         fw_fname = 'user_attributes.csv'
-
-        prefnames = np.load("user_prefecture_names.npy")
 
         # logger.debug(prefnames)
         # logger.debug(prefnames.shape)
@@ -475,6 +603,12 @@ class MmlDataFormat:
         fw = open(fw_fname, 'w')
 
         for line in fr1:
+
+            if int(line.split(',')[3]) == 0:  # Due to bug in input file that puts user 1 as 0
+                idxuserid = 0
+            else:
+                idxuserid = int(line.split(',')[3]) - 1
+
             if line.split(',')[0] == 'm':  # Attrib 1 = Male, 2 = Female
                 fw.write("%d" % int(line.split(',')[3]) + ",1" + "\n")
             elif line.split(',')[0] == 'f':  # Attrib 1 = Male, 2 = Female
@@ -518,6 +652,88 @@ class MmlDataFormat:
                 fw.write("%d" % int(line.split(',')[3]) + "," + "%d" %
                          (16 + int(np.where(prefnames == line.split(',')[2])[0])) + "\n")
 
+            #  Attrib 64-79 for total coupon views by user
+            if total_views_by_user[idxuserid] == 0:
+                fw.write("%d" % int(line.split(',')[3]) + ",64" + "\n")
+            elif total_views_by_user[idxuserid] < 5:
+                fw.write("%d" % int(line.split(',')[3]) + ",65" + "\n")
+            elif total_views_by_user[idxuserid] < 10:
+                fw.write("%d" % int(line.split(',')[3]) + ",66" + "\n")
+            elif total_views_by_user[idxuserid] < 15:
+                fw.write("%d" % int(line.split(',')[3]) + ",67" + "\n")
+            elif total_views_by_user[idxuserid] < 25:
+                fw.write("%d" % int(line.split(',')[3]) + ",68" + "\n")
+            elif total_views_by_user[idxuserid] < 40:
+                fw.write("%d" % int(line.split(',')[3]) + ",69" + "\n")
+            elif total_views_by_user[idxuserid] < 60:
+                fw.write("%d" % int(line.split(',')[3]) + ",70" + "\n")
+            elif total_views_by_user[idxuserid] < 90:
+                fw.write("%d" % int(line.split(',')[3]) + ",71" + "\n")
+            elif total_views_by_user[idxuserid] < 140:
+                fw.write("%d" % int(line.split(',')[3]) + ",72" + "\n")
+            elif total_views_by_user[idxuserid] < 210:
+                fw.write("%d" % int(line.split(',')[3]) + ",73" + "\n")
+            elif total_views_by_user[idxuserid] < 300:
+                fw.write("%d" % int(line.split(',')[3]) + ",74" + "\n")
+            elif total_views_by_user[idxuserid] < 500:
+                fw.write("%d" % int(line.split(',')[3]) + ",75" + "\n")
+            elif total_views_by_user[idxuserid] < 750:
+                fw.write("%d" % int(line.split(',')[3]) + ",76" + "\n")
+            elif total_views_by_user[idxuserid] < 1000:
+                fw.write("%d" % int(line.split(',')[3]) + ",77" + "\n")
+            elif total_views_by_user[idxuserid] < 1500:
+                fw.write("%d" % int(line.split(',')[3]) + ",78" + "\n")
+            else:
+                fw.write("%d" % int(line.split(',')[3]) + ",79" + "\n")
+
+            # Attrib 80-92 for coupon purchase total by user
+            if purchase_total_by_user[idxuserid] == 0:
+                fw.write("%d" % int(line.split(',')[3]) + ",80" + "\n")
+            elif purchase_total_by_user[idxuserid] < 3:
+                fw.write("%d" % int(line.split(',')[3]) + ",81" + "\n")
+            elif purchase_total_by_user[idxuserid] < 5:
+                fw.write("%d" % int(line.split(',')[3]) + ",82" + "\n")
+            elif purchase_total_by_user[idxuserid] < 10:
+                fw.write("%d" % int(line.split(',')[3]) + ",83" + "\n")
+            elif purchase_total_by_user[idxuserid] < 15:
+                fw.write("%d" % int(line.split(',')[3]) + ",84" + "\n")
+            elif purchase_total_by_user[idxuserid] < 20:
+                fw.write("%d" % int(line.split(',')[3]) + ",85" + "\n")
+            elif purchase_total_by_user[idxuserid] < 30:
+                fw.write("%d" % int(line.split(',')[3]) + ",86" + "\n")
+            elif purchase_total_by_user[idxuserid] < 50:
+                fw.write("%d" % int(line.split(',')[3]) + ",87" + "\n")
+            elif purchase_total_by_user[idxuserid] < 75:
+                fw.write("%d" % int(line.split(',')[3]) + ",88" + "\n")
+            elif purchase_total_by_user[idxuserid] < 100:
+                fw.write("%d" % int(line.split(',')[3]) + ",89" + "\n")
+            elif purchase_total_by_user[idxuserid] < 150:
+                fw.write("%d" % int(line.split(',')[3]) + ",90" + "\n")
+            elif purchase_total_by_user[idxuserid] < 200:
+                fw.write("%d" % int(line.split(',')[3]) + ",91" + "\n")
+            else:
+                fw.write("%d" % int(line.split(',')[3]) + ",92" + "\n")
+
+            # Attrib 93-101 for coupon purchase total by user
+            if total_purchase_instances_by_user[idxuserid] == 0:
+                fw.write("%d" % int(line.split(',')[3]) + ",93" + "\n")
+            elif total_purchase_instances_by_user[idxuserid] == 1:
+                fw.write("%d" % int(line.split(',')[3]) + ",94" + "\n")
+            elif total_purchase_instances_by_user[idxuserid] == 2:
+                fw.write("%d" % int(line.split(',')[3]) + ",95" + "\n")
+            elif total_purchase_instances_by_user[idxuserid] < 4:
+                fw.write("%d" % int(line.split(',')[3]) + ",96" + "\n")
+            elif total_purchase_instances_by_user[idxuserid] < 10:
+                fw.write("%d" % int(line.split(',')[3]) + ",97" + "\n")
+            elif total_purchase_instances_by_user[idxuserid] < 20:
+                fw.write("%d" % int(line.split(',')[3]) + ",98" + "\n")
+            elif total_purchase_instances_by_user[idxuserid] < 40:
+                fw.write("%d" % int(line.split(',')[3]) + ",99" + "\n")
+            elif total_purchase_instances_by_user[idxuserid] < 60:
+                fw.write("%d" % int(line.split(',')[3]) + ",100" + "\n")
+            else:
+                fw.write("%d" % int(line.split(',')[3]) + ",101" + "\n")
+
         fr1.close()
         fw.close()
 
@@ -528,15 +744,18 @@ class MmlDataFormat:
     # Loop through all coupon IDs
     def coupon_attributes(self):
 
-        os.chdir(self.data_dir)
-
-        fr1_fname = 'coupon_list_mod.csv'
-        fw_fname = 'coupon_attributes.csv'
+        # Load npy arrays
+        os.chdir(self.data_dir + "/npy_arrays")
 
         prefnames = np.load("coupon_prefecture_names.npy")
         smallareanames = np.load("coupon_small_area_names.npy")
         capsuletext = np.load("capsule_text.npy")
         genrename = np.load("genre_name.npy")
+
+        os.chdir(self.data_dir)
+
+        fr1_fname = 'coupon_list_mod.csv'
+        fw_fname = 'coupon_attributes.csv'
 
         # Both arrays' first elements starts with WEB which we want to remove
         logger.debug("Removing characters WEB from string")
@@ -586,6 +805,7 @@ class MmlDataFormat:
 
         for line in fr1:
             if linenum:
+
                 # TODO - Look for better cleaner implementation
                 if int(line.split(',')[2]) <= 5:  # Attrib discount rate %
                     fw.write("%d" % int(line.split(',')[25]) + ",1" + "\n")
@@ -796,51 +1016,77 @@ class MmlDataFormat:
 
         os.chdir(self.cwd)
 
-    def output_mml_to_kaggle_format(self):
+    def output_rating_pred_to_kaggle_format(self, modelpurchasethreshold=0.1, couponsperuserlimit=5):
+
+        # modelpurchasethreshold - cutoff to decide if a coupon was purchased or not
 
         os.chdir(self.data_dir)
 
-        fr1_fname = "user_cou_decode.csv"
-
-        linenum = 0
         numusers = 22873
-        numcoupons = 19723  # train + test coupons
         numtestcoupons = 310
 
-        userid = np.zeros(numusers, int)
-        couponid = np.zeros(numcoupons, int)
+        # Uncomment to create new user / coupon id/ hash files. Or load those arrays from saved npy files
 
-        userid_hash = np.empty(numusers, dtype=object)
-        couponid_hash = np.empty(numcoupons, dtype=object)
+        # numcoupons = 19723  # train + test coupons
 
-        fr1 = open(fr1_fname, 'r')
+        # userid = np.zeros(numusers, int)
+        # couponid = np.zeros(numcoupons, int)
+        # userid_hash = np.empty(numusers, dtype=object)
+        # couponid_hash = np.empty(numcoupons, dtype=object)
 
-        for line in fr1:
+        # fr1_fname = "user_cou_decode.csv"
+        #
+        # linenum = 0
+        # numusers = 22873
+        # numcoupons = 19723  # train + test coupons
+        # numtestcoupons = 310
+        #
+        # fr1 = open(fr1_fname, 'r')
+        #
+        # for line in fr1:
+        #
+        #     if linenum < numcoupons:
+        #         userid_hash[linenum] = line.split(',')[0]
+        #         userid[linenum] = int(line.split(',')[1])
+        #         couponid_hash[linenum] = line.split(',')[2]
+        #         couponid[linenum] = int(line.split(',')[3])
+        #     elif linenum < numusers:
+        #         userid_hash[linenum] = line.split(',')[0]
+        #         userid[linenum] = int(line.split(',')[1])
+        #
+        #     linenum += 1
+        #
+        # logger.debug(userid)
+        # logger.debug(couponid)
+        # logger.debug(userid_hash.shape)
+        # logger.debug(userid_hash)
+        #
+        # fr1.close()
+        #
+        # os.chdir("%s" % self.data_dir + "/output_files")
+        #
+        # np.save("user_uid_combined", userid)
+        # np.save("user_hash_combined", userid_hash)
+        # np.save("coupon_cid_combined", couponid)
+        # np.save("coupon_hash_combined", couponid_hash)
+        #
+        # os.chdir(self.data_dir)
+        #
+        # return __pass__
 
-            if linenum < numcoupons:
-                userid_hash[linenum] = line.split(',')[0]
-                userid[linenum] = int(line.split(',')[1])
-                couponid_hash[linenum] = line.split(',')[2]
-                couponid[linenum] = int(line.split(',')[3])
-            elif linenum < numusers:
-                userid_hash[linenum] = line.split(',')[0]
-                userid[linenum] = int(line.split(',')[1])
+        os.chdir("%s" % self.data_dir + "/npy_arrays")
 
-            linenum += 1
+        userid = np.load("user_uid_combined.npy")
+        userid_hash = np.load("user_hash_combined.npy")
+        couponid = np.load("coupon_cid_combined.npy")
+        couponid_hash = np.load("coupon_hash_combined.npy")
 
-        logger.debug(userid)
-        logger.debug(couponid)
-        logger.debug(userid_hash.shape)
-        logger.debug(userid_hash)
-
-        fr1.close()
-
-        fr2_fname = "mml_pred"
+        print(couponid_hash.shape)
+        print(couponid_hash)
 
         linenum = 0
         testcouponstartindex = 19413
         testcouponendindex = 19722
-        modelpurchasethreshold = 0.07  # cutoff to decide if a coupon was purchased or not
         numcouponspurchased = 0
 
         # purchased coupons by userid / test couponid
@@ -850,12 +1096,23 @@ class MmlDataFormat:
 
         print purchasedcoupons
 
+        os.chdir("%s" % self.data_dir + "/output_files")
+
+        fr2_fname = "mml_pred"
+
         fr2 = open(fr2_fname, 'r')
 
         logger.debug(couponid[testcouponstartindex])
         logger.debug(couponid[testcouponendindex])
+        userindex = 0
+        overweighteduser = 0
+        newuserlinenum = 0
 
         for line in fr2:
+
+            if userindex != int(line.split('\t')[0])-1:
+                overweighteduser = 0
+                newuserlinenum = 0
 
             # test coupons start from index 19413 bu have values starting from 20001
             userindex = int(line.split('\t')[0])-1
@@ -876,28 +1133,41 @@ class MmlDataFormat:
                     print couponid_hash[testcouponindex]
                 print int(line.split('\t')[0])
 
-            if float(line.split('\t')[2]) > modelpurchasethreshold:
+            if float(line.split('\t')[2]) > modelpurchasethreshold and newuserlinenum < 5 \
+                    and testcouponstartindex <= couponidtestcouponindex < testcouponstartindex+5:
+                overweighteduser += 1
+                # print "####"
+                # print couponidtestcouponindex
+                # print testcouponstartindex
+                # return __pass__
+
+            if float(line.split('\t')[2]) > modelpurchasethreshold and overweighteduser < 5:
                 numcouponspurchased += 1
                 purchasedcoupons[userindex, testcouponindex] = couponid_hash[couponidtestcouponindex]
 
             linenum += 1
+            newuserlinenum += 1
         fr2.close()
 
         logger.debug("Total coupons purchased uncut %d", numcouponspurchased)
 
-        fw_fname = "gsvdpp_user_cou_sat_output.csv"
+        os.chdir("%s" % self.data_dir + "/output_files")
+
+        fw_fname = "gsvdpp_30i_attr_sat.csv"
+        # fw_fname = "gsvdpp_second_input.csv"
         fw = open(fw_fname, 'w')
         fw.write("USER_ID_hash,PURCHASED_COUPONS\n")
 
         numcouponspurchased = 0
 
         for i in range(numusers):
-            couponsperuser = 0
+            couponsperuser = 1
             fw.write(userid_hash[i] + ",")
             for j in range(numtestcoupons):
-                if couponsperuser < 10 and purchasedcoupons[i, j]:
+                if couponsperuser <= couponsperuserlimit and purchasedcoupons[i, j]:
                     # print purchasedcoupons[i, j]
                     fw.write(purchasedcoupons[i, j] + " ")
+                    # fw.write("%d" % (i + 1) + "," + "%d" % (j + testcouponstartindex + 1) + "\n")
                     numcouponspurchased += 1
                     couponsperuser += 1
             fw.write("\n")
@@ -906,20 +1176,275 @@ class MmlDataFormat:
 
         logger.debug("Total coupons purchased %d", numcouponspurchased)
 
-        print sf.file_len(fr2_fname)
+        os.chdir(self.cwd)
+
+        return None
+
+    def output_item_rec_to_kaggle_format(self, modelpurchasethreshold=1.0):
+
+        # modelpurchasethreshold - cutoff to decide if a coupon was purchased or not
+
+        os.chdir(self.data_dir)
+
+        # Uncomment to create new user / coupon id/ hash files. Or load those arrays from save npy files
+
+        # numusers = 22873
+        # numtestcoupons = 310
+        # numcoupons = 19723  # train + test coupons
+
+        # userid = np.zeros(numusers, int)
+        # couponid = np.zeros(numcoupons, int)
+        # userid_hash = np.empty(numusers, dtype=object)
+        # couponid_hash = np.empty(numcoupons, dtype=object)
+
+        # fr1_fname = "user_cou_decode.csv"
+        #
+        # linenum = 0
+        # numusers = 22873
+        # numcoupons = 19723  # train + test coupons
+        # numtestcoupons = 310
+        #
+        # fr1 = open(fr1_fname, 'r')
+        #
+        # for line in fr1:
+        #
+        #     if linenum < numcoupons:
+        #         userid_hash[linenum] = line.split(',')[0]
+        #         userid[linenum] = int(line.split(',')[1])
+        #         couponid_hash[linenum] = line.split(',')[2]
+        #         couponid[linenum] = int(line.split(',')[3])
+        #     elif linenum < numusers:
+        #         userid_hash[linenum] = line.split(',')[0]
+        #         userid[linenum] = int(line.split(',')[1])
+        #
+        #     linenum += 1
+        #
+        # logger.debug(userid)
+        # logger.debug(couponid)
+        # logger.debug(userid_hash.shape)
+        # logger.debug(userid_hash)
+        #
+        # fr1.close()
+        #
+        # os.chdir("%s" % self.data_dir + "/output_files")
+        #
+        # np.save("user_uid_combined", userid)
+        # np.save("user_hash_combined", userid_hash)
+        # np.save("coupon_cid_combined", couponid)
+        # np.save("coupon_hash_combined", couponid_hash)
+        #
+        # os.chdir(self.data_dir)
+        #
+        # return __pass__
+
+        os.chdir("%s" % self.data_dir + "/npy_arrays")
+
+        userid_hash = np.load("user_hash_combined.npy")
+        couponid = np.load("coupon_cid_combined.npy")
+        couponid_hash = np.load("coupon_hash_combined.npy")
+
+        logger.debug(couponid_hash.shape)
+        logger.debug(couponid_hash)
+
+        linenum = 0
+        testcouponstartindex = 19413
+        testcouponendindex = 19722
+        userindex = 0
+        numcouponspurchased = 0
+
+        os.chdir("%s" % self.data_dir + "/output_files")
+
+        fr2_fname = "mml_itemr.pred"
+
+        fr2 = open(fr2_fname, 'r')
+
+        fw_fname = "bprl_itemr.csv"
+        fw = open(fw_fname, 'w')
+        fw.write("USER_ID_hash,PURCHASED_COUPONS\n")
+
+        logger.debug(couponid[testcouponstartindex])
+        logger.debug(couponid[testcouponendindex])
+
+        for line in fr2:
+            # If model run without --test-users option or the option without all users, input unique training data
+            # won't have info for some users who have never viewed a coupon or missing in the userlist.
+            # They would have been skipped and user num sequence broken
+            prevuserindex = userindex
+
+            userindex = int(line.split('[')[0])
+
+            if userindex == 0:
+                fw.write("%s" % userid_hash[userindex] + ", ")
+            else:
+                # Uncomment if uncommenting prevuserindex above
+                if userindex != prevuserindex + 1 and prevuserindex:
+                    fw.write("%s" % userid_hash[prevuserindex] + ",\n")
+
+                fw.write("%s" % userid_hash[userindex-1] + ", ")
+
+            for i in range(9):
+                if line.split('[')[1] != ']\n':  # Check if user has any coupon recommendation
+                    couponidfrominputfile = int(line.split('[')[1].split(',')[i].split(':')[0])
+                else:
+                    continue  # skip this user
+
+                if couponidfrominputfile >= 20001:
+                    couponidtestcouponindex = testcouponstartindex + couponidfrominputfile - 20001
+                else:
+                    logger.error(line)
+                    logger.error("CouponId: %d", couponidfrominputfile)
+                    raise ValueError("Invalid couponId, has to be >= 20001")
+
+                if float(line.split('[')[1].split(',')[i].split(':')[1]) > modelpurchasethreshold:
+                    fw.write("%s" % couponid_hash[couponidtestcouponindex] + " ")
+                    numcouponspurchased += 1
+
+            fw.write("\n")
+
+            linenum += 1
+
+        fr2.close()
+        fw.close()
+
+        logger.debug("Total coupons purchased uncut %d", numcouponspurchased)
 
         os.chdir(self.cwd)
 
+    def avg_output_rating_pred_to_kaggle_format(self, modelpurchasethreshold=0.1, couponsperuserlimit=5):
+
+        # modelpurchasethreshold - cutoff to decide if a coupon was purchased or not
+
+        os.chdir("%s" % self.data_dir + "/output_files")
+
+        userid = np.load("user_uid_combined.npy")
+        userid_hash = np.load("user_hash_combined.npy")
+        couponid = np.load("coupon_cid_combined.npy")
+        couponid_hash = np.load("coupon_hash_combined.npy")
+
+        numusers = 22873
+        numtestcoupons = 310
+        testcouponstartindex = 19413
+        testcouponendindex = 19722
+        numcouponspurchased = 0
+
+        # purchased coupons by userid / test couponid
+        purchasedcoupons = np.empty((numusers, numtestcoupons), dtype=object)
+
+        print purchasedcoupons.shape
+
+        print purchasedcoupons
+
+        avg1_fname = "mml_pred"
+        avg2_fname = "mml_pred2"
+
+        logger.debug(couponid[testcouponstartindex])
+        logger.debug(couponid[testcouponendindex])
+
+        avg2_file = open(avg2_fname, 'r')
+
+        file2modeloutput = np.zeros(sf.file_len(avg2_fname), float)
+
+        linenum = 0
+
+        for line in avg2_file:
+
+            # test coupons start from index 19413 bu have values starting from 20001
+            userindex = int(line.split('\t')[0])-1
+            testcouponindex = int(line.split('\t')[1]) - 20001
+
+            if logger.getEffectiveLevel() == 10 and linenum < 10:  # logger level 10 is debug
+                if int(line.split('\t')[0]) in userid:
+                    print int(line.split('\t')[0])
+                    print userindex
+                    print userid[userindex]
+                    print userid_hash[userindex]
+                    print linenum
+                if int(line.split('\t')[1]) in couponid:
+                    print int(line.split('\t')[1])
+                    print testcouponindex
+                    print couponid[testcouponindex]
+                    print couponid_hash[testcouponindex]
+                print int(line.split('\t')[0])
+
+            file2modeloutput[linenum] = float(line.split('\t')[2])
+
+            linenum += 1
+        avg2_file.close()
+
+        print file2modeloutput.shape
+        print file2modeloutput
+
+        avg1_file = open(avg1_fname, 'r')
+
+        linenum = 0
+        for line in avg1_file:
+
+            # test coupons start from index 19413 bu have values starting from 20001
+            userindex = int(line.split('\t')[0])-1
+            couponidtestcouponindex = testcouponstartindex + (int(line.split('\t')[1]) - 20001)
+            testcouponindex = int(line.split('\t')[1]) - 20001
+
+            if logger.getEffectiveLevel() == 10 and linenum < 10:  # logger level 10 is debug
+                if int(line.split('\t')[0]) in userid:
+                    print int(line.split('\t')[0])
+                    print userindex
+                    print userid[userindex]
+                    print userid_hash[userindex]
+                    print linenum
+                if int(line.split('\t')[1]) in couponid:
+                    print int(line.split('\t')[1])
+                    print testcouponindex
+                    print couponid[testcouponindex]
+                    print couponid_hash[testcouponindex]
+                print int(line.split('\t')[0])
+
+            avgmodeloutput = (file2modeloutput[linenum] + float(line.split('\t')[2])) / 2
+
+            if avgmodeloutput > modelpurchasethreshold:
+                numcouponspurchased += 1
+                purchasedcoupons[userindex, testcouponindex] = couponid_hash[couponidtestcouponindex]
+
+            linenum += 1
+        avg1_file.close()
+
+        logger.debug("Total coupons purchased uncut %d", numcouponspurchased)
+
+        os.chdir("%s" % self.data_dir + "/output_files")
+
+        fw_fname = "gsvdpp_output_avg.csv"
+        fw = open(fw_fname, 'w')
+        fw.write("USER_ID_hash,PURCHASED_COUPONS\n")
+
+        numcouponspurchased = 0
+
+        for i in range(numusers):
+            couponsperuser = 1
+            fw.write(userid_hash[i] + ",")
+            for j in range(numtestcoupons):
+                if couponsperuser <= couponsperuserlimit and purchasedcoupons[i, j]:
+                    # print purchasedcoupons[i, j]
+                    fw.write(purchasedcoupons[i, j] + " ")
+                    numcouponspurchased += 1
+                    couponsperuser += 1
+            fw.write("\n")
+
+        logger.debug("Total coupons purchased %d", numcouponspurchased)
+        os.chdir(self.cwd)
+        return None
 
 if __name__ == "__main__":
 
     mdf = MmlDataFormat()
 
+    # List of functions available. Go to implementation to see more comments on what each one does
+
     # mdf.mml_train_unique_data()
 
-    mdf.mml_uid_cid()
+    # mdf.mml_uid_cid()
 
     # mdf.test_data_uid_cid()
+
+    # mdf.train_viewed_data_uid_cid()
 
     # mdf.mml_cv_set_coupons()
 
@@ -931,4 +1456,10 @@ if __name__ == "__main__":
 
     # mdf.mml_test_data()
 
-    # mdf.output_mml_to_kaggle_format()
+    # mdf.output_rating_pred_to_kaggle_format(modelpurchasethreshold=0.07, couponsperuserlimit=10)
+
+    mdf.output_item_rec_to_kaggle_format(modelpurchasethreshold=1)
+
+    # mdf.avg_output_rating_pred_to_kaggle_format(modelpurchasethreshold=0.2, couponsperuserlimit=5)
+
+    # mdf.random_split_test_file()
