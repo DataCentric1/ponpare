@@ -93,7 +93,7 @@ class MmlDataFormat:
 
         numofcouponsintrain = 19413
         swapcouponlist = np.empty(sf.file_len(fr1_name), dtype=object)
-        cvcouponlist = np.empty(int(numofcouponsintrain/60) + 1, dtype=object)
+        cvcouponlist = np.empty(int(numofcouponsintrain / 60) + 1, dtype=object)
 
         fr1 = open(fr1_name, 'r')
 
@@ -223,11 +223,67 @@ class MmlDataFormat:
         for z in range(0, 10):
             for i in range(1, 2001):
                 for j in range(20001, 20030):
-                    fw.write("%d" % (z*2000 + i) + "," + "%d" % (z * 30 + j) + "\n")
+                    fw.write("%d" % (z * 2000 + i) + "," + "%d" % (z * 30 + j) + "\n")
 
         fw.close()
 
-    # Create test userid / couponid data.
+    def coupon_area_cid(self):
+
+        os.chdir("%s" % self.data_dir + "/npy_arrays")
+
+        couponid = np.load("coupon_cid_combined.npy")
+        couponid_hash = np.load("coupon_hash_combined.npy")
+
+        logger.debug(couponid_hash.shape)
+        logger.debug(couponid_hash)
+        logger.debug(couponid.shape)
+        logger.debug(couponid)
+
+        testcouponstartindex = 19413
+        testcouponendindex = 19722
+
+        os.chdir(self.data_dir)
+
+        logger.debug(couponid[0])
+        logger.debug(couponid[testcouponendindex])
+
+        fr1_fname = "coupon_area.csv"
+
+        couponid_index = np.zeros(sf.file_len(fr1_fname), int)
+
+        fr1 = open(fr1_fname, 'r')
+
+        fw_fname = "coupon_area_cid.csv"
+        fw = open(fw_fname, 'w')
+        fw.write("SMALL_AREA_NAME,PREF_NAME,COUPONID,COUPONID_HASH\n")
+
+        linenum = 0
+        i = 0
+        for line in fr1:
+            if linenum:
+                if np.where(line.split(',')[2] == couponid_hash)[0] <= testcouponstartindex - 1:
+                    couponid_index[linenum] = np.where(line.split(',')[2] == couponid_hash)[0] + 1
+                else:  # test coupons starts from 20001 - 20310
+                    couponid_index[linenum] = np.where(line.split(',')[2] == couponid_hash)[0] + 20001 - 19413
+                    if i < 10:
+                        logger.debug(couponid_hash[np.where(line.split(',')[2] == couponid_hash)[0]])
+                        logger.debug(couponid_index[linenum])
+                    i += 1
+                fw.write("%s," % line.split(',')[0] + "%s," % line.split(',')[1] + "%d," % couponid_index[linenum] +
+                         "%s," % line.split(',')[2] + "\n")
+            linenum += 1
+
+        fr1.close()
+        fw.close()
+
+        logger.debug(np.unique(couponid_index, return_counts=True))
+        logger.debug(couponid_index.shape)
+        logger.debug(couponid_index)
+
+        return None
+
+    # Randomly split tets file of 7M lines (22k users x 310 coupons) into multiple small files
+    # Doesn't end up as an equal split at all. Needs better implementation
     def random_split_test_file(self):
 
         os.chdir(self.test_data_dir)
@@ -453,7 +509,6 @@ class MmlDataFormat:
         linenum = 0
 
         for line in fr2:
-
             fw.write(line.split(',')[0] + "," + line.split(',')[1] + "," + "%d" % purchaseflag[linenum] + "\n")
 
             linenum += 1
@@ -494,16 +549,16 @@ class MmlDataFormat:
         # Save Capsule text and genre name
         fr1_fname = 'coupon_list_mod.csv'
 
-        swapcapsuletext = np.empty(sf.file_len(fr1_fname)-1, dtype=object)
-        swapgenrename = np.empty(sf.file_len(fr1_fname)-1, dtype=object)
+        swapcapsuletext = np.empty(sf.file_len(fr1_fname) - 1, dtype=object)
+        swapgenrename = np.empty(sf.file_len(fr1_fname) - 1, dtype=object)
 
         fr1 = open(fr1_fname, 'r')
         linenum = 0
 
         for line in fr1:
             if linenum:
-                swapcapsuletext[linenum-1] = line.split(',')[0]
-                swapgenrename[linenum-1] = line.split(',')[1]
+                swapcapsuletext[linenum - 1] = line.split(',')[0]
+                swapgenrename[linenum - 1] = line.split(',')[1]
             linenum += 1
 
         capsuletext = np.unique(swapcapsuletext, return_index=False)
@@ -652,7 +707,7 @@ class MmlDataFormat:
                 fw.write("%d" % int(line.split(',')[3]) + "," + "%d" %
                          (16 + int(np.where(prefnames == line.split(',')[2])[0])) + "\n")
 
-            #  Attrib 64-79 for total coupon views by user
+            # Attrib 64-79 for total coupon views by user
             if total_views_by_user[idxuserid] == 0:
                 fw.write("%d" % int(line.split(',')[3]) + ",64" + "\n")
             elif total_views_by_user[idxuserid] < 5:
@@ -754,8 +809,44 @@ class MmlDataFormat:
 
         os.chdir(self.data_dir)
 
+        # Each coupon is listed in multiple pref / small area names.
+        # This data for both train and test coupons is in coupon_area.csv, using that for attributes
+        couponarea_fname = "coupon_area_cid.csv"
+
+        prefnamesbycoupon = dict()
+
+        smallareanamesbycoupon = dict()
+
+        couponarea_file = open(couponarea_fname, 'r')
+
+        couponarea_file_linenum = 0
+        for couponarea_file_line in couponarea_file:
+            # Check if we are looking at right coupon_id
+            if couponarea_file_linenum:
+                if int(couponarea_file_line.split(',')[2]) in prefnamesbycoupon.keys():
+                    prefnamesbycoupon[int(couponarea_file_line.split(',')[2])].append(
+                        couponarea_file_line.split(',')[1])
+                else:  # Initialize dict[key] with first value in list and then append as above
+                    prefnamesbycoupon[int(couponarea_file_line.split(',')[2])] = [couponarea_file_line.split(',')[1]]
+
+                if int(couponarea_file_line.split(',')[2]) in smallareanamesbycoupon.keys():
+                    smallareanamesbycoupon[int(couponarea_file_line.split(',')[2])].append(
+                        couponarea_file_line.split(',')[0])
+                else:  # Initialize dict[key] with first value in list and then append as above
+                    smallareanamesbycoupon[int(couponarea_file_line.split(',')[2])] = [
+                        couponarea_file_line.split(',')[0]]
+
+                if couponarea_file_linenum == 1:
+                    logger.debug(couponarea_file_line.split(',')[0])
+                    logger.debug(couponarea_file_line.split(',')[1])
+                    logger.debug(int(couponarea_file_line.split(',')[2]))
+                    logger.debug(couponarea_file_line.split(',')[3])
+            couponarea_file_linenum += 1
+
+        couponarea_file.close()
+
         fr1_fname = 'coupon_list_mod.csv'
-        fw_fname = 'coupon_attributes.csv'
+        fw_fname = 'coupon_attributes_1011.csv'
 
         # Both arrays' first elements starts with WEB which we want to remove
         logger.debug("Removing characters WEB from string")
@@ -983,31 +1074,44 @@ class MmlDataFormat:
                 startattributenum = 72
                 if line.split(',')[0] in capsuletext:
                     fw.write("%d" % int(line.split(',')[25]) + ",%d" % (startattributenum +
-                             int(np.where(capsuletext == line.split(',')[0])[0])) + "\n")
+                                                                        int(np.where(capsuletext == line.split(',')[0])[
+                                                                                0])) + "\n")
 
                 startattributenum += numofcapsuletextattributes
                 if linenum == 1:
                     print startattributenum
                 if line.split(',')[1] in genrename:
                     fw.write("%d" % int(line.split(',')[25]) + ",%d" % (startattributenum +
-                             int(np.where(genrename == line.split(',')[1])[0])) + "\n")
+                                                                        int(np.where(genrename == line.split(',')[1])[
+                                                                                0])) + "\n")
 
                 startattributenum += numofgenrenameattributes
-                if linenum == 1:
-                    print startattributenum
-                if line.split(',')[22] in prefnames:
-                    fw.write("%d" % int(line.split(',')[25]) + ",%d" % (startattributenum +
-                             int(np.where(prefnames == line.split(',')[22])[0])) + "\n")
+
+                # Iterate over all the prefnames listed for a give couponid, if that couponid has any pref info
+                if int(line.split(',')[25]) in prefnamesbycoupon.keys():
+                    for pref in prefnamesbycoupon[int(line.split(',')[25])]:
+                        if pref in prefnames:
+                            fw.write("%d" % int(line.split(',')[25]) + ",%d" % (
+                                startattributenum + int(np.where(prefnames == pref)[0])) + "\n")
 
                 startattributenum += numofprefnamesattributes
-                if linenum == 1:
-                    print startattributenum
-                if line.split(',')[23] in smallareanames:
-                    fw.write("%d" % int(line.split(',')[25]) + ",%d" % (startattributenum +
-                             int(np.where(smallareanames == line.split(',')[23])[0])) + "\n")
+
+                # Iterate over all the smallareanames listed for a give couponid, if that couponid has any sa info
+                if int(line.split(',')[25]) in smallareanamesbycoupon.keys():
+                    for smallarea in smallareanamesbycoupon[int(line.split(',')[25])]:
+                        if smallarea in smallareanames:
+                            fw.write("%d" % int(line.split(',')[25]) + ",%d" % (
+                                startattributenum + int(np.where(smallareanames == smallarea)[0])) + "\n")
+
+                # if couponarea_file_line.split(',')[0] in smallareanames:
+                #     fw.write("%d" % int(line.split(',')[25]) + ",%d" % (startattributenum +
+                #                                                         int(np.where(smallareanames ==
+                #                                                                      couponarea_file_line.split(
+                #                                                                          ',')[0])[0])) + "\n")
 
                 if linenum == 1:  # Print just once
-                    logger.debug("Total number of attributes = %d", (startattributenum + numofsmallareanamesattributes))
+                    logger.debug("Total number of attributes = %d", (startattributenum +
+                                                                     numofsmallareanamesattributes))
 
             linenum += 1
 
@@ -1110,12 +1214,12 @@ class MmlDataFormat:
 
         for line in fr2:
 
-            if userindex != int(line.split('\t')[0])-1:
+            if userindex != int(line.split('\t')[0]) - 1:
                 overweighteduser = 0
                 newuserlinenum = 0
 
             # test coupons start from index 19413 bu have values starting from 20001
-            userindex = int(line.split('\t')[0])-1
+            userindex = int(line.split('\t')[0]) - 1
             couponidtestcouponindex = testcouponstartindex + (int(line.split('\t')[1]) - 20001)
             testcouponindex = int(line.split('\t')[1]) - 20001
 
@@ -1134,7 +1238,7 @@ class MmlDataFormat:
                 print int(line.split('\t')[0])
 
             if float(line.split('\t')[2]) > modelpurchasethreshold and newuserlinenum < 5 \
-                    and testcouponstartindex <= couponidtestcouponindex < testcouponstartindex+5:
+                    and testcouponstartindex <= couponidtestcouponindex < testcouponstartindex + 5:
                 overweighteduser += 1
                 # print "####"
                 # print couponidtestcouponindex
@@ -1258,7 +1362,7 @@ class MmlDataFormat:
 
         fr2 = open(fr2_fname, 'r')
 
-        fw_fname = "bprl_itemr.csv"
+        fw_fname = "itemattrknn_itemr.csv"
         fw = open(fw_fname, 'w')
         fw.write("USER_ID_hash,PURCHASED_COUPONS\n")
 
@@ -1280,7 +1384,7 @@ class MmlDataFormat:
                 if userindex != prevuserindex + 1 and prevuserindex:
                     fw.write("%s" % userid_hash[prevuserindex] + ",\n")
 
-                fw.write("%s" % userid_hash[userindex-1] + ", ")
+                fw.write("%s" % userid_hash[userindex - 1] + ", ")
 
             for i in range(9):
                 if line.split('[')[1] != ']\n':  # Check if user has any coupon recommendation
@@ -1349,7 +1453,7 @@ class MmlDataFormat:
         for line in avg2_file:
 
             # test coupons start from index 19413 bu have values starting from 20001
-            userindex = int(line.split('\t')[0])-1
+            userindex = int(line.split('\t')[0]) - 1
             testcouponindex = int(line.split('\t')[1]) - 20001
 
             if logger.getEffectiveLevel() == 10 and linenum < 10:  # logger level 10 is debug
@@ -1380,7 +1484,7 @@ class MmlDataFormat:
         for line in avg1_file:
 
             # test coupons start from index 19413 bu have values starting from 20001
-            userindex = int(line.split('\t')[0])-1
+            userindex = int(line.split('\t')[0]) - 1
             couponidtestcouponindex = testcouponstartindex + (int(line.split('\t')[1]) - 20001)
             testcouponindex = int(line.split('\t')[1]) - 20001
 
@@ -1432,8 +1536,8 @@ class MmlDataFormat:
         os.chdir(self.cwd)
         return None
 
-if __name__ == "__main__":
 
+if __name__ == "__main__":
     mdf = MmlDataFormat()
 
     # List of functions available. Go to implementation to see more comments on what each one does
@@ -1441,6 +1545,8 @@ if __name__ == "__main__":
     # mdf.mml_train_unique_data()
 
     # mdf.mml_uid_cid()
+
+    # mdf.coupon_area_cid()
 
     # mdf.test_data_uid_cid()
 
@@ -1458,7 +1564,7 @@ if __name__ == "__main__":
 
     # mdf.output_rating_pred_to_kaggle_format(modelpurchasethreshold=0.07, couponsperuserlimit=10)
 
-    mdf.output_item_rec_to_kaggle_format(modelpurchasethreshold=1)
+    mdf.output_item_rec_to_kaggle_format(modelpurchasethreshold=0.1)
 
     # mdf.avg_output_rating_pred_to_kaggle_format(modelpurchasethreshold=0.2, couponsperuserlimit=5)
 
