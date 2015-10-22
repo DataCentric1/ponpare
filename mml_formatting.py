@@ -11,6 +11,10 @@ import support_functions as sf
 __author__ = "DataCentric1"
 __pass__ = 1
 __fail__ = 0
+
+__numusers__ = 22873
+__numtraincoupons__ = 19413
+__numtestcoupons__ = 310
 #########################################################################################################
 # Setup logging
 logging.config.fileConfig('logging.conf')
@@ -47,6 +51,70 @@ class MmlDataFormat:
 
         os.chdir(self.cwd)
 
+        return None
+
+    # Convert user/coupon hash into UID / CID
+    def mml_convert_to_uid_cid(self):
+
+        os.chdir("%s" % self.data_dir + "/npy_arrays")
+
+        # userid = np.load("user_uid_combined.npy")
+        userid_hash = np.load("user_hash_combined.npy")
+        # couponid = np.load("coupon_cid_combined.npy")
+        couponid_hash = np.load("coupon_hash_combined.npy")
+
+        logger.debug(userid_hash.shape)
+        logger.debug(userid_hash)
+        # logger.debug(userid.shape)
+        # logger.debug(userid)
+        logger.debug(couponid_hash.shape)
+        logger.debug(couponid_hash)
+        # logger.debug(couponid.shape)
+        # logger.debug(couponid)
+
+        testcouponstartindex = 19413
+
+        # logger.debug(couponid[0])
+        # logger.debug(couponid[testcouponendindex])
+
+        os.chdir(self.train_data_dir)
+
+        fr1_fname = "mml.data"
+
+        fr1 = open(fr1_fname, 'r')
+
+        # These need to be changed based on which columns userhash and / or couponhash are in input file
+        userhash_col = 0
+        couponhash_col = 1
+
+        fw_fname = "mml_uid_cid.data"
+        fw = open(fw_fname, 'w')
+
+        linenum = 0
+        i = 0
+        for line in fr1:
+            if linenum:
+
+                userid = np.where(line.split(',')[userhash_col] == userid_hash)[0] + 1
+
+                if np.where(line.split(',')[couponhash_col] == couponid_hash)[0] <= testcouponstartindex - 1:
+                    couponid = np.where(line.split(',')[couponhash_col] == couponid_hash)[0] + 1
+                else:  # test coupons starts from 20001 - 20310
+                    couponid = np.where(line.split(',')[couponhash_col] == couponid_hash)[0] + 20001 - 19413
+                    if i < 10:
+                        logger.debug(couponid_hash[np.where(line.split(',')[couponhash_col] == couponid_hash)[0]])
+                        logger.debug(couponid)
+                    i += 1
+
+                fw.write("%d," % userid + "%d," % couponid + "%s" % line.split(',')[2])
+
+            linenum += 1
+
+        fr1.close()
+        fw.close()
+
+        return None
+
     # Eliminate multiple coupon views per user as it might confuse the algorithm. Instead provide num of visits data
     # as input into user and / or coupon attributes
     def mml_train_unique_data(self):
@@ -81,6 +149,73 @@ class MmlDataFormat:
         fw.close()
 
         os.chdir(self.cwd)
+
+    # Instead of binary 0 /1 purchase as output, add views also as part of output to increase resolution and
+    # differentiation of the various user / coupon combos. New output rating
+    # 0 - No views, 1 - viewed once, 2 - multiple views, 3 - multiple session views,
+    # 4 - Purchase (skipping 4 to give more weight to purchase). Need to check if this makes a difference
+    def mml_train_data_nonbin_ratings(self):
+
+        os.chdir(self.train_data_dir)
+
+        fr1_fname = 'mml_uid_cid.data'
+        fw_fname = 'mml_nonbin_output.data'
+
+        fr1 = open(fr1_fname, 'r')
+        fw = open(fw_fname, 'w')
+
+        prevcouponid = ""
+        prevuserid = ""
+
+        viewedcoupons = []
+        numcouponviews = np.zeros(__numtraincoupons__ + 1, dtype=int)
+
+        linenum = 0
+        for line in fr1:
+            curruserid = int(line.split(',')[0])
+            currcouponid = int(line.split(',')[1])
+
+            if int(line.split(',')[2]) == 1:  # Was coupon purchased?
+                numcouponviews[currcouponid] = 999  # 999 proxy for coupon purchased
+            # Some coupons are viewed after purchase, no need to increment those
+            elif numcouponviews[currcouponid] != 999:
+                numcouponviews[currcouponid] += 1
+
+            # Add new coupon ID to list if it's from same user (the same user condition won't be satisfied
+            # in the first line and hence providing an exception using the linenum == 0 check
+            if prevcouponid != currcouponid and (linenum == 0 or prevuserid == curruserid):
+                if currcouponid not in viewedcoupons:
+                    viewedcoupons.append(currcouponid)
+
+            if prevuserid and prevuserid != curruserid:
+                for couponnum in viewedcoupons:
+                    # Preserve view where a coupon was purchased, purchased rating is 4 to give higher weight
+                    if numcouponviews[couponnum] == 999:
+                        fw.write("%d" % prevuserid + ",%d" % couponnum + ",4\n")
+                    elif numcouponviews[couponnum] > 10:  # Should be rare case of so many views and no purchase
+                        fw.write("%d" % prevuserid + ",%d" % couponnum + ",3\n")
+                    elif numcouponviews[couponnum] > 2:
+                        fw.write("%d" % prevuserid + ",%d" % couponnum + ",2\n")
+                    elif numcouponviews[couponnum] == 2:
+                        fw.write("%d" % prevuserid + ",%d" % couponnum + ",1\n")
+                    else:
+                        fw.write("%d" % prevuserid + ",%d" % couponnum + ",0\n")
+
+                # Reset viewedcoupons with just the latest coupon which would be from the new user
+                viewedcoupons = [currcouponid]
+                numcouponviews = np.zeros(__numtraincoupons__ + 1, dtype=int)
+
+            prevuserid = curruserid
+            prevcouponid = currcouponid
+
+            linenum += 1
+
+        fr1.close()
+        fw.close()
+
+        os.chdir(self.cwd)
+
+        return None
 
     # Split ~310 coupons from mml_unique data for cross-validation set
     def mml_cv_set_coupons(self):
@@ -450,18 +585,6 @@ class MmlDataFormat:
             # Should get correct values even though idxuser and idxcoupon will start from 0
             if arrayindexuser[0]:
                 idxuser = int(userid[arrayindexuser[0]])
-
-            # if linenum < 10:
-            #     print idxuser
-            #     print idxcoupon
-            #     print arrayindexuser
-            #     print repr(line.split(',')[0])
-            #     print line.split(',')[1]
-            # elif 1000 < linenum < 1020:
-            #     print idxuser
-            #     print idxcoupon
-            # else:
-            #     raise ValueError("Just stop!")
 
             if phase == "train":
                 fw.write("%d" % idxuser + "," + "%d" % idxcoupon + "," + line.split(',')[2])
@@ -1544,6 +1667,8 @@ if __name__ == "__main__":
 
     # mdf.mml_train_unique_data()
 
+    # mdf.mml_convert_to_uid_cid()
+
     # mdf.mml_uid_cid()
 
     # mdf.coupon_area_cid()
@@ -1551,6 +1676,8 @@ if __name__ == "__main__":
     # mdf.test_data_uid_cid()
 
     # mdf.train_viewed_data_uid_cid()
+
+    mdf.mml_train_data_nonbin_ratings()
 
     # mdf.mml_cv_set_coupons()
 
@@ -1564,7 +1691,7 @@ if __name__ == "__main__":
 
     # mdf.output_rating_pred_to_kaggle_format(modelpurchasethreshold=0.07, couponsperuserlimit=10)
 
-    mdf.output_item_rec_to_kaggle_format(modelpurchasethreshold=0.1)
+    # mdf.output_item_rec_to_kaggle_format(modelpurchasethreshold=0.3)
 
     # mdf.avg_output_rating_pred_to_kaggle_format(modelpurchasethreshold=0.2, couponsperuserlimit=5)
 
